@@ -2120,7 +2120,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
     }
   } else {
     // Empty collectives can be discarded.
-    if (info->count == 0) return ncclSuccess;
+    if (info->count == 0) return ncclSuccess;  // 会处理count = 0的case
 
     if (info->datatype == ncclFloat8e4m3 || info->datatype == ncclFloat8e5m2) {
       if (comm->minCompCap < 90) {
@@ -2144,16 +2144,16 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       t->func = info->coll;
       t->sendbuff = info->sendbuff;
       t->recvbuff = info->recvbuff;
-      t->count = info->count;
+      t->count = info->count;  // size
       t->root = info->root;
       t->datatype = info->datatype;
-      size_t elementSize = ncclTypeSize(t->datatype);
-      if (t->func == ncclFuncAllGather || t->func == ncclFuncBroadcast) {
+      size_t elementSize = ncclTypeSize(t->datatype);  // 字节数
+      if (t->func == ncclFuncAllGather || t->func == ncclFuncBroadcast) { // 对于all_gather和broadcast, 直接转化为int8类型即可
         t->count *= elementSize;
         t->datatype = ncclInt8;
         elementSize = 1;
       }
-      t->trafficBytes = t->count*elementSize*ncclFuncTrafficPerByte(t->func, comm->nRanks);
+      t->trafficBytes = t->count*elementSize*ncclFuncTrafficPerByte(t->func, comm->nRanks); // TODO
       t->opHost = info->op;
       t->opDev = opDev; // C++ struct assignment
       t->chunkSteps = info->chunkSteps;
@@ -2165,9 +2165,9 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
   }
 
   if (info->stream != planner->streamRecent || planner->streams == nullptr) {
-    planner->streamRecent = info->stream;
+    planner->streamRecent = info->stream; // 记录最近使用的stream
     struct ncclCudaStreamList* l = planner->streams;
-    while (true) {
+    while (true) {  // 将stream添加到comm->planner.streams中, 以下应该是group的操作，group的不同streams必须是同一个cuda graph
       if (l == nullptr) { // Got to the end, this must be a new stream.
         struct ncclCudaGraph graph;
         NCCLCHECK(ncclCudaGetCapturingGraph(&graph, info->stream));
@@ -2192,7 +2192,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
 }
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
-  NCCLCHECK(ncclGroupStartInternal());
+  NCCLCHECK(ncclGroupStartInternal()); // 线程局部变量ncclGroupDepth++记录嵌套深度
   ncclResult_t ret = ncclSuccess;
   int devOld = -1;
 
@@ -2204,14 +2204,14 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     CUDACHECKGOTO(cudaGetDevice(&devOld), ret, fail);
     CUDACHECKGOTO(cudaSetDevice(info->comm->cudaDev), ret, fail);
   }
-  NCCLCHECKGOTO(ArgsCheck(info), ret, fail);
+  NCCLCHECKGOTO(ArgsCheck(info), ret, fail); // 这里检查通过nccl api传递进来的参数是否合理
 
   INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zu datatype %d op %d root %d comm %p [nranks=%d] stream %p",
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
-        info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
+        info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream); // opCount记录次数?? TODO
   TRACE_CALL("nccl%s(%" PRIx64 ",%" PRIx64 ",%zu,%d,%d,%d,%p,%p)", info->opName, reinterpret_cast<int64_t>(info->sendbuff), reinterpret_cast<int64_t>(info->recvbuff), info->count, info->datatype, info->op, info->root, info->comm, info->stream);
 
-  NCCLCHECKGOTO(taskAppend(info->comm, info), ret, fail);
+  NCCLCHECKGOTO(taskAppend(info->comm, info), ret, fail); // 将用户的输入信息info转换成一个任务task，并添加到comm->planner中
 
 exit:
   if (devOld != -1) CUDACHECK(cudaSetDevice(devOld));

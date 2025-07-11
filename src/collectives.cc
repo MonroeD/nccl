@@ -91,7 +91,7 @@ ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcoun
 }
 
 NCCL_API(ncclResult_t, ncclAllReduce, const void* sendbuff, void* recvbuff, size_t count,
-    ncclDataType_t datatype, ncclRedOp_t op, ncclComm* comm, cudaStream_t stream);
+    ncclDataType_t datatype, ncclRedOp_t op, ncclComm* comm, cudaStream_t stream);  // 编译是代理 "-fvisibility=hidden"的，这里控制可见性
 ncclResult_t ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t datatype, ncclRedOp_t op, ncclComm* comm, cudaStream_t stream) {
   struct NvtxParamsAllReduce {

@@ -35,7 +35,7 @@ ncclResult_t PtrCheck(void* ptr, const char* opname, const char* ptrname) {
 
 ncclResult_t CommCheck(struct ncclComm* comm, const char* opname, const char* ptrname) {
   NCCLCHECK(PtrCheck(comm, opname, ptrname));
-  if (comm->startMagic != NCCL_MAGIC || comm->endMagic != NCCL_MAGIC) {
+  if (comm->startMagic != NCCL_MAGIC || comm->endMagic != NCCL_MAGIC) { // 防止内存越界被污染
     WARN("Error: corrupted comm object detected");
     return ncclInvalidArgument;
   }
@@ -71,7 +71,7 @@ ncclResult_t ArgsCheck(struct ncclInfo* info) {
   if (info->comm->checkPointers) {
     if ((info->coll == ncclFuncSend || info->coll == ncclFuncRecv)) {
       if (info->count >0)
-        NCCLCHECK(CudaPtrCheck(info->recvbuff, info->comm, "buff", info->opName));
+        NCCLCHECK(CudaPtrCheck(info->recvbuff, info->comm, "buff", info->opName));  // 通过cudaPointerGetAttributes检查指针是否合法-指定device的device ptr
     } else {
       // Check CUDA device pointers
       if (info->coll != ncclFuncBroadcast || info->comm->rank == info->root) {
