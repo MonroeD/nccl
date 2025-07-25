@@ -189,7 +189,7 @@ static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
         hasBatchMask ^= 1ull<<c;
       }
     } while (tmpMask != 0);
-  }
+  } // 对 batchPrev赋值
 
   // Merge-sort per-channel proxy-op lists by opCount when merging them into plan->proxyOpQueue
   // Phase 1: scan first op of each channel, store opCount in headIds[c].
@@ -300,7 +300,7 @@ ncclResult_t ncclTasksRegAndEnqueue(struct ncclComm* comm) {
       workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkColl>(&comm->memScoped, 1);
       workNode->workType = ncclDevWorkTypeColl;
       workNode->size = sizeof(struct ncclDevWorkColl);
-      memcpy((void*)(workNode+1), (void*)&devWork, workNode->size);
+      memcpy((void*)(workNode+1), (void*)&devWork, workNode->size); // 将devWork拷贝到workNode中
     }
 next:
     ncclIntruQueueEnqueue(&planner->collWorkQueue, workNode);
@@ -330,11 +330,11 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     // Add to set of (fn,op,ty) indices on first occurrence
     if (tasksByFnOpTy[index] == nullptr) fnOpTyIndices[fnOpTyCount++] = index;
     // Add to LIFO for this (fn,op,ty)
-    task->next = tasksByFnOpTy[index];
+    task->next = tasksByFnOpTy[index];  // 一样的index会形成一个链表
     tasksByFnOpTy[index] = task;
     // Next task
     task = next;
-  }
+  }  // 将所有的任务按照(fn,op,ty)分组，存储在tasksByFnOpTy中
 
   // Walk (fn,op,ty) bins, compute algo and proto etc. Then bin them by their
   // scheduling constraints (collnet x nvls).
@@ -352,13 +352,13 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
       struct ncclTaskColl* aggEnd = aggBeg->next;
       struct ncclTaskColl agg = *aggBeg;
       // We aggregate operations that are within 4X size of each other.
-      while (aggEnd != nullptr && aggEnd->trafficBytes < 4*aggBeg->trafficBytes) {
+      while (aggEnd != nullptr && aggEnd->trafficBytes < 4*aggBeg->trafficBytes) {  // 先不看，不考虑aggregative的情况
         agg.count += aggEnd->count;
         agg.trafficBytes += aggEnd->trafficBytes;
         aggEnd = aggEnd->next;
       }
 
-      NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nTasksPerChannel, simInfo));
+      NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nTasksPerChannel, simInfo));  // 获取info的algorithm和protocol等信息
       agg.devFuncId = ncclDevFuncId(agg.func, agg.opDev.op, agg.datatype, agg.algorithm, agg.protocol);
 
       int isCollnet=0, isNvls=0;
@@ -383,7 +383,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
         aggBeg->devFuncId = agg.devFuncId;
         aggBeg->isCollnet = isCollnet;
         aggBeg->isNvls = isNvls;
-        ncclIntruQueueEnqueue(&collBins[isCollnet][isNvls], aggBeg);
+        ncclIntruQueueEnqueue(&collBins[isCollnet][isNvls], aggBeg);  // 将aggBeg放入对应的collBins中
         aggBeg = next;
       } while (aggBeg != aggEnd);
     } while (aggBeg != nullptr);
@@ -394,7 +394,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   // channels.
   for (int isCollnet=0; isCollnet <= 1; isCollnet++) {
     for (int isNvls=0; isNvls <= 1; isNvls++) {
-      ncclIntruQueueTransfer(&planner->collTaskQueue, &collBins[isCollnet][isNvls]);
+      ncclIntruQueueTransfer(&planner->collTaskQueue, &collBins[isCollnet][isNvls]);  // collBins[isCollnet][isNvls]中的任务放入planner->collTaskQueue中
     }
   }
 
@@ -409,7 +409,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     void* regBufSend[NCCL_MAX_LOCAL_RANKS];
     void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
     bool regNeedConnect = true;
-    ncclRegisterCollNvlsBuffers(comm, task, regBufSend, regBufRecv, &planner->collCleanupQueue, &regNeedConnect);
+    ncclRegisterCollNvlsBuffers(comm, task, regBufSend, regBufRecv, &planner->collCleanupQueue, &regNeedConnect);  // 一般case不会走到
 
     if (comm->runtimeConn && comm->initAlgoChannels[task->algorithm] == false) {
       if (task->algorithm == NCCL_ALGO_NVLS_TREE && comm->initAlgoChannels[NCCL_ALGO_NVLS] == false && regNeedConnect == true) {
@@ -497,7 +497,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       workNode = workNode->next;
     }
   plan_full:;
-  } while (0);
+  } while (0); // TODO 
 
   int kindPrev = -1;
   size_t trafficPerChannel = 0;
@@ -583,7 +583,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       // Ensure room for worst case of one new batch per channel
       if (!testBudget(budget, plan->nWorkBatches + nChannels, plan->workBytes + workNode->size)) {
         return ncclSuccess;
-      }
+      }   // 上面计算channelLo 和 channelHi 不清楚，channelLo/Mid/Hi是指的什么
 
       devWork->channelLo = channelId;
       devWork->channelHi = channelId + nChannels-1;
@@ -599,7 +599,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       uint32_t chunkSize, directFlags=0;
       size_t grainSize = ncclProtoGrainSize(task->protocol);
       if (countLo != 0) {
-        NCCLCHECK(calcCollChunking(comm, task, /*nChannels=*/1, globalBytesPerElement*countLo, &chunkSize, &directFlags, &proxyOpLo));
+        NCCLCHECK(calcCollChunking(comm, task, /*nChannels=*/1, globalBytesPerElement*countLo, &chunkSize, &directFlags, &proxyOpLo)); // 设置proxyOpLo
         devWork->cbd.chunkGrainsLo = chunkSize/grainSize;
       }
       if (countHi != 0) {
@@ -659,7 +659,7 @@ static ncclResult_t scheduleCollTasksToPlan(
           }
           proxyOp->ringAlgo->incRefCount();
         }
-        addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
+        addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);  // 把workbatch push to comm->planner->wipPlann->channels[c]->workBatchQueue中
         // Coverity reports "proxyOp->connection" as being possibly uninitialized.  It's hard to
         // determine if that's actually true but it's also not clear if that would be an issue.
         // coverity[uninit_use_in_call:FALSE]
@@ -700,14 +700,14 @@ static ncclResult_t scheduleCollTasksToPlan(
     }
 
     for (int i=0; i < task->nCleanupQueueElts; i++) {
-      ncclIntruQueueEnqueue(&plan->cleanupQueue, ncclIntruQueueDequeue(&planner->collCleanupQueue));
+      ncclIntruQueueEnqueue(&plan->cleanupQueue, ncclIntruQueueDequeue(&planner->collCleanupQueue));  // TODO 还没看
     }
     ncclIntruQueueDequeue(&planner->collTaskQueue);
     ncclIntruQueueDequeue(&planner->collWorkQueue);
     nPlanColls -= 1;
     planner->nTasksColl -= 1;
-    ncclIntruQueueEnqueue(&plan->collTaskQueue, task);
-    ncclIntruQueueEnqueue(&plan->workQueue, workNode);
+    ncclIntruQueueEnqueue(&plan->collTaskQueue, task);  // planner 转移到plan中
+    ncclIntruQueueEnqueue(&plan->workQueue, workNode);  // workNode转移到plan->workQueue中
     plan->workBytes += workNode->size;
   }
   return ncclSuccess;
@@ -1320,7 +1320,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
       struct ncclKernelPlan* plan = ncclMemoryPoolAlloc<struct ncclKernelPlan>(&comm->memPool_ncclKernelPlan, &comm->memPermanent);
       plan->comm = comm;
-      plan->reclaimer.fn = reclaimPlan;
+      plan->reclaimer.fn = reclaimPlan; // 回收程序
       plan->persistent = persistent;
       // finishPlan() promotes ncclDevWorkStorageType[Fifo|Persistent]->Args if the work can fit.
       plan->workStorageType = persistent ? ncclDevWorkStorageTypePersistent
@@ -1336,15 +1336,15 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
       // first, the place where we cut the kernel could vary by rank which would
       // cause the "shortest channel first" channel picker to have divergent results.
       if (planner->nTasksColl != 0) {
-        NCCLCHECKGOTO(scheduleCollTasksToPlan(comm, plan, &budget), result, failure);
+        NCCLCHECKGOTO(scheduleCollTasksToPlan(comm, plan, &budget), result, failure);  // 构造 workbatch push to comm->planner->wipPlan->channels[c]->workBatchQueue中
       }
       // And only drain p2p tasks once colls are depleted.
       if (planner->nTasksColl == 0 && planner->nTasksP2p != 0) {
         NCCLCHECKGOTO(scheduleP2pTasksToPlan(comm, plan, &budget), result, failure);
       }
-      finishPlan(comm, plan);
+      finishPlan(comm, plan);  // 设置plan->kernelArgs
       if (plan->workBytes != 0) {
-        ncclIntruQueueEnqueue(&planner->planQueue, plan);
+        ncclIntruQueueEnqueue(&planner->planQueue, plan);  // plan push进 comm->planner->planQueue中
         nPlans += 1;
       }
     } while (planner->nTasksColl + planner->nTasksP2p != 0);
@@ -1354,6 +1354,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
     if (nPlans == 0) return ncclSuccess;
 
+    // 建立几个stream的依赖，TODO，等graph的时候再来看下
     // Semantically we want these dependencies for the kernels launched:
     //   1. Launch host task on hostStream.
     //   2. Launch kernel, depends on all of {deviceStream, hostStream, userStream[i]...}
@@ -2139,7 +2140,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       return ncclSuccess;
     } else {
       // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
-      ncclGroupCommJoin(info->comm);
+      ncclGroupCommJoin(info->comm); // 将comm插入到局部线程变量ncclGroupCommHead中
       struct ncclTaskColl* t = ncclMemoryPoolAlloc<struct ncclTaskColl>(&comm->memPool_ncclTaskColl, &comm->memPermanent);
       t->func = info->coll;
       t->sendbuff = info->sendbuff;
@@ -2153,14 +2154,14 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
         t->datatype = ncclInt8;
         elementSize = 1;
       }
-      t->trafficBytes = t->count*elementSize*ncclFuncTrafficPerByte(t->func, comm->nRanks); // TODO
+      t->trafficBytes = t->count*elementSize*ncclFuncTrafficPerByte(t->func, comm->nRanks); // TODO, 没搞明白
       t->opHost = info->op;
       t->opDev = opDev; // C++ struct assignment
       t->chunkSteps = info->chunkSteps;
       t->sliceSteps = info->sliceSteps;
 
       planner->nTasksColl += 1;
-      ncclTaskCollSorterInsert(&planner->collSorter, t, t->trafficBytes);
+      ncclTaskCollSorterInsert(&planner->collSorter, t, t->trafficBytes);  // 把t放进planner->collSorter中，planner->collSorter是一个优先队列，按照trafficBytes排序
     }
   }
 
@@ -2208,10 +2209,10 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
 
   INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zu datatype %d op %d root %d comm %p [nranks=%d] stream %p",
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
-        info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream); // opCount记录次数?? TODO
+        info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream); // opCount记录launch的次数，作用是什么? TODO
   TRACE_CALL("nccl%s(%" PRIx64 ",%" PRIx64 ",%zu,%d,%d,%d,%p,%p)", info->opName, reinterpret_cast<int64_t>(info->sendbuff), reinterpret_cast<int64_t>(info->recvbuff), info->count, info->datatype, info->op, info->root, info->comm, info->stream);
 
-  NCCLCHECKGOTO(taskAppend(info->comm, info), ret, fail); // 将用户的输入信息info转换成一个任务task，并添加到comm->planner中
+  NCCLCHECKGOTO(taskAppend(info->comm, info), ret, fail); // 将用户的输入信息info转换成一个任务task，并添加到comm->planner的collSorter or p2pQueue中
 
 exit:
   if (devOld != -1) CUDACHECK(cudaSetDevice(devOld));
@@ -2219,7 +2220,7 @@ exit:
   NCCLCHECK(ncclGroupEndInternal());
   /* if depth is 1, ncclGroupEndInternal() will trigger group ops. The state can change
    * so we have to check state here. */
-  if (info->comm && !info->comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(info->comm, &ret)); }
+  if (info->comm && !info->comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(info->comm, &ret)); }  // 所谓的blocking就是在group.cc/ncclGroupEndInternal里直接执行，还是立即返回后台调用线程去处理
   return ret;
 fail:
   if (info->comm && !info->comm->config.blocking) (void) ncclCommSetAsyncError(info->comm, ret);

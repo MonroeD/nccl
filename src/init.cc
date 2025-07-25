@@ -313,7 +313,7 @@ ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
       goto exit;
     }
     /* if there is linked group job, we should complete it. */
-    if (comm->groupJob) {
+    if (comm->groupJob) {  // groupJob应该就是上一次调设置的，比如上一次调用nccl all_reduce等接口
       NCCLCHECK(ncclGroupJobComplete(comm->groupJob));
       comm->groupJob = NULL;
     }
@@ -2266,7 +2266,7 @@ ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
   NCCLCHECK(CommCheck(comm, "ncclGetAsyncError", "comm"));
   NCCLCHECK(PtrCheck(asyncError, "ncclGetAsyncError", "asyncError"));
 
-  *asyncError = __atomic_load_n(&comm->asyncResult, __ATOMIC_ACQUIRE);
+  *asyncError = __atomic_load_n(&comm->asyncResult, __ATOMIC_ACQUIRE);  // comm->asyncResult 是通过ncclCommSetAsyncError设置的
   if (*asyncError == ncclSuccess && comm->proxyState) *asyncError = __atomic_load_n(&comm->proxyState->asyncResult, __ATOMIC_ACQUIRE);
   return ncclSuccess;
 }

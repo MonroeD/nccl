@@ -348,7 +348,7 @@ struct ncclKernelPlanner {
     struct ncclIntruQueue<struct ncclTaskP2p, &ncclTaskP2p::next> sendQueue;
     struct ncclIntruQueue<struct ncclTaskP2p, &ncclTaskP2p::next> recvQueue;
   };
-  struct ncclTaskCollSorter collSorter;
+  struct ncclTaskCollSorter collSorter;   // 收集用户输入的info 
   struct Peer* peers/*[nRanks]*/;
   int nTasksColl, nTasksP2p;
   bool persistent;
@@ -367,8 +367,8 @@ struct ncclKernelPlanner {
   // Lists of tasks to be assembled into plans.
   //////////////////////////////////////////////////////////////////////////////
 
-  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueue;
-  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueue;
+  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueue;  // 数据从collSorter 转移到这里
+  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueue;  // 从collTaskQueue 在这里构造work
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> tmpCollWorkQueue;
   struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> collCleanupQueue;
 
@@ -592,7 +592,7 @@ struct ncclComm {
   bool finalizeCalled;
   // shared structures for finalization
   int finalizeRankCnt;
-  // group job to support multi-thread FT
+  // group job to support multi-thread FT FT是容错？
   struct ncclGroupJob *groupJob;
 
   // Tuning plugin

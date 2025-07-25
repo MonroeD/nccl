@@ -420,7 +420,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
     } while (comm != nullptr);
   }
 
-  NCCLCHECKGOTO(asyncJobLaunch(asyncJobsMain, groupAbortFlag), ret, fail);
+  NCCLCHECKGOTO(asyncJobLaunch(asyncJobsMain, groupAbortFlag), ret, fail);  // 先不看，不会调用
 
   /* Connect channels at runtime if cumem is supported */
   if (groupCommHeadMain != nullptr) {
@@ -433,7 +433,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
       memset(algoNeedConnect, 0, sizeof(bool) * NCCL_NUM_ALGORITHMS);
 
       CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
-      NCCLCHECKGOTO(ncclPrepareTasks(comm, algoNeedConnect, &needConnect, simInfo), ret, fail);
+      NCCLCHECKGOTO(ncclPrepareTasks(comm, algoNeedConnect, &needConnect, simInfo), ret, fail);  // 将comm->planner->collSorter-> collTaskQueue中的任务赋值后放到comm->planner->collTaskQueue中
 
       if (comm->cuMemSupport && needConnect) {
         struct ncclPreconnectJob* job;
@@ -461,7 +461,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
     comm = groupCommHeadMain;
     do {
       CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
-      NCCLCHECKGOTO(ncclTasksRegAndEnqueue(comm), ret, fail);
+      NCCLCHECKGOTO(ncclTasksRegAndEnqueue(comm), ret, fail);  // collTaskQueue 拿 task -> collWorkQueue (ncclDevWork等)
       comm = comm->groupNext;
     } while (comm);
   }
@@ -530,7 +530,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
     }
     internalSimInfoPtr = &internalSimInfo;
   }
-
+  // ncclGroupCommHead 在taskAppend的ncclGroupCommJoin就已经被设置了，
   if (ncclGroupCommHead != nullptr || !ncclIntruQueueEmpty(&ncclAsyncJobs) || ncclGroupCommPreconnectHead != nullptr) {
     ncclGroupJobMain.groupCommHeadPtr = &ncclGroupCommHead;
     ncclGroupJobMain.groupCommPreconnectHeadPtr = &ncclGroupCommPreconnectHead;
@@ -556,14 +556,14 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
       if (ncclGroupCommHead) {
         ncclComm_t comm = ncclGroupCommHead;
         do {
-          NCCLCHECKGOTO(ncclCommSetAsyncError(comm, ncclInProgress), ret, fail);
+          NCCLCHECKGOTO(ncclCommSetAsyncError(comm, ncclInProgress), ret, fail);  // 设置comm的状态
           /* link group job to communicators. */
           comm->groupJob = ncclGroupJobMainPtr;
           comm = comm->groupNext;
         } while (comm);
       }
 
-      ncclGroupJobMainPtr->base.func = groupLaunchNonBlocking;
+      ncclGroupJobMainPtr->base.func = groupLaunchNonBlocking;  // 下面执行启一个线程执行groupLaunchNonBlocking函数，函数的参数就是这个base
       PTHREADCHECKGOTO(pthread_create(&ncclGroupJobMainPtr->base.thread, NULL, ncclAsyncJobMain, (void*)&ncclGroupJobMainPtr->base), "pthread_create", ret, fail);
       ret = ncclInProgress;
     } else {

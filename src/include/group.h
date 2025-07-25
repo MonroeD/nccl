@@ -110,7 +110,7 @@ inline void ncclGroupCommJoin(struct ncclComm* comm) {
     // the users program order yet insures siblings occur consecutively. This
     // is required by doLaunches() in "group.cc".
     struct ncclComm** pp = &ncclGroupCommHead;
-    while (*pp != nullptr && comm->intraComm0 != (*pp)->intraComm0)
+    while (*pp != nullptr && comm->intraComm0 != (*pp)->intraComm0)  // intraComm0是一个process的leader comm
       pp = &(*pp)->groupNext;
     comm->groupNext = *pp;
     *pp = comm;
